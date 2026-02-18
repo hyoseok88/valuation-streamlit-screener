@@ -26,11 +26,15 @@ def _r2_score(y: np.ndarray, yhat: np.ndarray) -> float:
 
 def compute_multiple(snapshot: FundamentalSnapshot) -> tuple[float | None, str]:
     if snapshot.market_cap is None:
-        return None, "데이터 부족"
-    if len(snapshot.ocf_q) < 4:
+        return None, "시총 데이터 부족"
+
+    if len(snapshot.ocf_q) >= 4:
+        ocf_sum = float(np.nansum(snapshot.ocf_q[:4]))
+    elif snapshot.ocf_ttm is not None:
+        ocf_sum = float(snapshot.ocf_ttm)
+    else:
         return None, "OCF 데이터 부족"
 
-    ocf_sum = float(np.nansum(snapshot.ocf_q[:4]))
     if ocf_sum <= 0:
         return None, "OCF<=0"
 

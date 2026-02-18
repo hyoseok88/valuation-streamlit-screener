@@ -15,6 +15,7 @@ class UniverseRecord:
 class FundamentalSnapshot:
     market_cap: float | None
     ocf_q: list[float]
+    ocf_ttm: float | None
     revenue_y: list[float]
     asof_date: datetime
     sector: str

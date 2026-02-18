@@ -9,6 +9,7 @@ import streamlit as st
 def render_hero(country_label: str, updated_at: str, df: pd.DataFrame) -> None:
     rec_count = int(df["is_recommended"].sum()) if not df.empty else 0
     med = float(df["multiple"].dropna().median()) if not df.empty and df["multiple"].notna().any() else float("nan")
+    coverage = float(df["multiple"].notna().mean() * 100.0) if not df.empty else 0.0
     st.markdown(
         f"""
 <div class="hero">
@@ -19,10 +20,23 @@ def render_hero(country_label: str, updated_at: str, df: pd.DataFrame) -> None:
         unsafe_allow_html=True,
     )
 
-    c1, c2, c3 = st.columns(3)
+    c1, c2, c3, c4 = st.columns(4)
     c1.metric("추천 종목 수", rec_count)
     c2.metric("표본 종목 수", len(df))
     c3.metric("중앙 멀티플", "-" if np.isnan(med) else f"{med:.2f}")
+    c4.metric("지표 산출률", f"{coverage:.1f}%")
+
+    if not df.empty and df["multiple"].isna().any():
+        missing_reasons = (
+            df[df["multiple"].isna()]["rejection_reason"]
+            .fillna("데이터 부족")
+            .replace("", "데이터 부족")
+            .value_counts()
+            .head(3)
+        )
+        reason_text = ", ".join([f"{idx} {cnt}건" for idx, cnt in missing_reasons.items()])
+        if reason_text:
+            st.caption(f"지표 미산출 상위 원인: {reason_text}")
 
 
 def render_filters(df: pd.DataFrame) -> dict:

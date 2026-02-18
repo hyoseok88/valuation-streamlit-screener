@@ -4,12 +4,13 @@ from src.metrics import classify_sales_trend, compute_multiple, evaluate_vip
 from src.models import FundamentalSnapshot
 
 
-def _snapshot(market_cap, ocf_q, revenue_y, prices):
+def _snapshot(market_cap, ocf_q, revenue_y, prices, ocf_ttm=None):
     from datetime import datetime, timezone
 
     return FundamentalSnapshot(
         market_cap=market_cap,
         ocf_q=ocf_q,
+        ocf_ttm=ocf_ttm,
         revenue_y=revenue_y,
         asof_date=datetime.now(timezone.utc),
         sector="Tech",
@@ -30,6 +31,13 @@ def test_compute_multiple_ocf_non_positive():
     v, reason = compute_multiple(snap)
     assert v is None
     assert reason == "OCF<=0"
+
+
+def test_compute_multiple_ttm_fallback():
+    snap = _snapshot(1400.0, [200.0, 100.0], [1, 2, 3, 4, 5], [], ocf_ttm=100.0)
+    v, reason = compute_multiple(snap)
+    assert reason == ""
+    assert round(v, 4) == 14.0
 
 
 def test_sales_trend_labels():
