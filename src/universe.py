@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 from pathlib import Path
 
@@ -14,6 +14,8 @@ def _normalize_symbol(country: str, symbol: str) -> str:
         return f"{symbol}.KS"
     if country == "JP_TOP200" and symbol.isdigit():
         return f"{symbol}.T"
+    if country == "US_TOP500":
+        return symbol.replace(".", "-")
     return symbol
 
 
@@ -49,45 +51,70 @@ def _fetch_wiki_table(url: str, symbol_col: str, name_col: str) -> list[dict[str
 
 def _wiki_candidates(country: str) -> list[dict[str, str]]:
     if country == "US_TOP500":
-        items = _fetch_wiki_table(
-            "https://en.wikipedia.org/wiki/List_of_S%26P_500_companies", "Symbol", "Security"
-        )
-        if items:
-            return items
+        return _fetch_wiki_table("https://en.wikipedia.org/wiki/List_of_S%26P_500_companies", "Symbol", "Security")
     if country == "JP_TOP200":
         items = _fetch_wiki_table("https://en.wikipedia.org/wiki/Nikkei_225", "Ticker", "Company Name")
-        if items:
-            for item in items:
-                item["symbol"] = _normalize_symbol(country, item["symbol"])
-            return items
+        for item in items:
+            item["symbol"] = _normalize_symbol(country, item["symbol"])
+        return items
     if country == "EU_TOP200":
-        items = _fetch_wiki_table(
-            "https://en.wikipedia.org/wiki/STOXX_Europe_600", "Ticker", "Company"
-        )
-        if items:
-            return items
+        return _fetch_wiki_table("https://en.wikipedia.org/wiki/STOXX_Europe_600", "Ticker", "Company")
     return []
+
+
+def _merge_candidates(country: str, *candidate_lists: list[dict[str, str]]) -> list[dict[str, str]]:
+    merged: dict[str, dict[str, str]] = {}
+    for items in candidate_lists:
+        for item in items:
+            symbol = _normalize_symbol(country, item.get("symbol", ""))
+            if not symbol:
+                continue
+            name = str(item.get("name", "")).strip()
+            if symbol not in merged:
+                merged[symbol] = {"symbol": symbol, "name": name}
+            elif not merged[symbol]["name"] and name:
+                merged[symbol]["name"] = name
+    return list(merged.values())
+
+
+def _kr_top_from_fdr(n: int) -> list[UniverseRecord]:
+    try:
+        import FinanceDataReader as fdr
+
+        listed = fdr.StockListing("KRX")
+    except Exception:
+        return []
+
+    if listed is None or listed.empty:
+        return []
+
+    work = listed.copy()
+    work["Code"] = work["Code"].astype(str).str.zfill(6)
+    work["Marcap"] = pd.to_numeric(work.get("Marcap"), errors="coerce")
+    work = work.dropna(subset=["Marcap"]).sort_values("Marcap", ascending=False).head(n)
+
+    return [
+        UniverseRecord(
+            symbol=f"{row['Code']}.KS",
+            name=str(row.get("Name", row["Code"])),
+            country="KR_TOP200",
+            sector="Unknown",
+            currency="KRW",
+        )
+        for _, row in work.iterrows()
+    ]
 
 
 def get_top_universe(country: str, n: int) -> list[UniverseRecord]:
     from .market_data import fetch_overview_batch
 
-    candidates = _load_seed(country)
-    if not candidates:
-        candidates = _wiki_candidates(country)
+    # KRX는 FDR의 Marcap 컬럼으로 Top N을 직접 뽑아 표본 누락을 최소화한다.
+    if country == "KR_TOP200":
+        kr_rows = _kr_top_from_fdr(n)
+        if kr_rows:
+            return kr_rows
 
-    if country == "KR_TOP200" and not candidates:
-        try:
-            import FinanceDataReader as fdr
-
-            listed = fdr.StockListing("KRX")
-            candidates = [
-                {"symbol": _normalize_symbol(country, row["Code"]), "name": str(row.get("Name", ""))}
-                for _, row in listed.iterrows()
-                if str(row.get("Code", "")).isdigit()
-            ]
-        except Exception:
-            candidates = []
+    candidates = _merge_candidates(country, _load_seed(country), _wiki_candidates(country))
 
     symbols = [x["symbol"] for x in candidates]
     overview = fetch_overview_batch(symbols)
@@ -96,19 +123,17 @@ def get_top_universe(country: str, n: int) -> list[UniverseRecord]:
     for item in candidates:
         info = overview.get(item["symbol"], {})
         mcap = info.get("market_cap")
-        if not mcap:
-            continue
         rows.append(
             {
                 "symbol": item["symbol"],
                 "name": item["name"] or info.get("name", item["symbol"]),
                 "sector": info.get("sector", "Unknown"),
                 "currency": info.get("currency", "N/A"),
-                "market_cap": float(mcap),
+                "market_cap": float(mcap) if mcap else None,
             }
         )
 
-    rows = sorted(rows, key=lambda x: x["market_cap"], reverse=True)[:n]
+    rows = sorted(rows, key=lambda x: (x["market_cap"] is not None, x["market_cap"] or 0.0), reverse=True)[:n]
 
     return [
         UniverseRecord(

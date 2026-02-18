@@ -97,7 +97,7 @@ def evaluate_snapshot(snapshot: FundamentalSnapshot) -> ComputedSignal:
     vip_pass = evaluate_vip(snapshot.price_series)
     is_recommended = multiple is not None and multiple <= MULTIPLE_THRESHOLD
     if not is_recommended and not reason:
-        reason = "멀티플>10"
+        reason = f"멀티플>{MULTIPLE_THRESHOLD:g}"
     return ComputedSignal(
         multiple=multiple,
         is_recommended=is_recommended,

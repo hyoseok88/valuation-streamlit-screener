@@ -34,9 +34,16 @@ def fetch_overview_batch(symbols: list[str]) -> dict[str, dict]:
     out: dict[str, dict] = {}
     for symbol in symbols:
         try:
-            info = yf.Ticker(symbol).info
+            ticker = yf.Ticker(symbol)
+            info = ticker.info
+            market_cap = info.get("marketCap")
+            if not market_cap:
+                try:
+                    market_cap = ticker.fast_info.get("market_cap")
+                except Exception:
+                    market_cap = None
             out[symbol] = {
-                "market_cap": info.get("marketCap"),
+                "market_cap": market_cap,
                 "sector": info.get("sector") or "Unknown",
                 "currency": info.get("currency") or "N/A",
                 "name": info.get("shortName") or info.get("longName") or symbol,
