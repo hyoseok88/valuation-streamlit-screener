@@ -1,11 +1,64 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import pandas as pd
 
 from .config import COUNTRY_LIMITS
-from .market_data import fetch_snapshot
+from .market_data import fetch_overview_batch, fetch_snapshot
 from .metrics import evaluate_snapshot
 from .universe import get_top_universe
+
+
+def normalize_ticker_input(country: str, ticker_input: str) -> str:
+    ticker = (ticker_input or "").strip().upper()
+    if not ticker:
+        return ""
+    if country == "KR_TOP200" and ticker.isdigit() and len(ticker) == 6:
+        return f"{ticker}.KS"
+    if country == "JP_TOP200" and ticker.isdigit():
+        return f"{ticker}.T"
+    if country == "US_TOP500":
+        return ticker.replace(".", "-")
+    return ticker
+
+
+def build_single_ticker_result(country: str, ticker_input: str) -> dict | None:
+    symbol = normalize_ticker_input(country, ticker_input)
+    if not symbol:
+        return None
+
+    snap = fetch_snapshot([symbol], country).get(symbol)
+    if snap is None:
+        return {
+            "symbol": symbol,
+            "name": symbol,
+            "multiple": None,
+            "vip_pass": False,
+            "is_recommended": False,
+            "sales_trend": "판정불가",
+            "rejection_reason": "조회 실패",
+            "market_cap": None,
+            "currency": "N/A",
+        }
+
+    overview = fetch_overview_batch([symbol]).get(symbol, {})
+    if snap.market_cap is None:
+        mcap = overview.get("market_cap")
+        snap.market_cap = float(mcap) if mcap else None
+    if snap.currency == "N/A" and overview.get("currency"):
+        snap.currency = overview["currency"]
+
+    signal = evaluate_snapshot(snap)
+    return {
+        "symbol": symbol,
+        "name": overview.get("name") or symbol,
+        "multiple": signal.multiple,
+        "vip_pass": signal.vip_pass,
+        "is_recommended": signal.is_recommended,
+        "sales_trend": signal.sales_trend,
+        "rejection_reason": signal.rejection_reason,
+        "market_cap": snap.market_cap,
+        "currency": snap.currency,
+    }
 
 
 def build_recommendations(country: str, filters: dict | None = None) -> pd.DataFrame:

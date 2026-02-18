@@ -6,14 +6,25 @@ import streamlit as st
 
 from src.cache_store import load_country_frame, load_meta, save_country_frame, save_meta
 from src.config import COUNTRY_LABELS, COUNTRY_LIMITS
-from src.screens import apply_filters, build_recommendations
-from src.ui_components import render_filters, render_hero, render_recommend_treemap, render_table
+from src.screens import apply_filters, build_recommendations, build_single_ticker_result
+from src.ui_components import (
+    render_filters,
+    render_hero,
+    render_recommend_treemap,
+    render_single_ticker_result,
+    render_table,
+)
 from src.ui_theme import inject_theme
 
 
 @st.cache_data(show_spinner=False, ttl=60 * 30)
 def _refresh_country(country: str):
     return build_recommendations(country, filters={})
+
+
+@st.cache_data(show_spinner=False, ttl=60 * 10)
+def _lookup_ticker(country: str, ticker_input: str):
+    return build_single_ticker_result(country, ticker_input)
 
 
 def _load_or_build(country: str, force_refresh: bool):
@@ -50,6 +61,11 @@ def main() -> None:
 
     filters = render_filters(df)
     filtered = apply_filters(df, filters)
+    ticker_query = (filters.get("ticker_lookup") or "").strip()
+    ticker_result = None
+    if ticker_query:
+        with st.spinner("개별 티커 지표를 조회하는 중입니다..."):
+            ticker_result = _lookup_ticker(country, ticker_query)
 
     meta = load_meta()
     updated_at = meta.get(country) or meta.get("updated_at_utc") or "N/A"
@@ -57,6 +73,7 @@ def main() -> None:
         updated_at = f"{updated_at} (cache)"
 
     render_hero(COUNTRY_LABELS[country], updated_at, filtered)
+    render_single_ticker_result(ticker_result)
     render_recommend_treemap(filtered)
     render_table(filtered)
 

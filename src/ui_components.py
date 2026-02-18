@@ -45,14 +45,42 @@ def render_filters(df: pd.DataFrame) -> dict:
     selected_sectors = st.sidebar.multiselect("섹터", sectors)
     mult_min, mult_max = st.sidebar.slider("멀티플 범위", 0.0, 30.0, (0.0, 30.0), 0.1)
     vip_only = st.sidebar.checkbox("VIP 조건만", value=False)
-    keyword = st.sidebar.text_input("검색(티커/종목명)", value="")
+    keyword = st.sidebar.text_input("목록 필터 검색(티커/종목명)", value="")
+    st.sidebar.subheader("개별 티커 조회")
+    ticker_lookup = st.sidebar.text_input("티커 입력", value="", placeholder="예: 005930 / AAPL / 7203")
     return {
         "sectors": selected_sectors,
         "multiple_min": mult_min,
         "multiple_max": mult_max,
         "vip_only": vip_only,
         "keyword": keyword,
+        "ticker_lookup": ticker_lookup,
     }
+
+
+def render_single_ticker_result(result: dict | None) -> None:
+    if result is None:
+        return
+
+    st.subheader("개별 티커 조회 결과")
+    name = result.get("name") or result.get("symbol") or "-"
+    symbol = result.get("symbol") or "-"
+    multiple = result.get("multiple")
+    vip_pass = bool(result.get("vip_pass"))
+    is_recommended = bool(result.get("is_recommended"))
+    reason = result.get("rejection_reason") or "-"
+    trend = result.get("sales_trend") or "판정불가"
+    market_cap = result.get("market_cap")
+    currency = result.get("currency") or "N/A"
+
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("종목", f"{name} ({symbol})")
+    c2.metric("멀티플", "-" if multiple is None else f"{float(multiple):.2f}")
+    c3.metric("VIP 추천 여부", "Y" if vip_pass else "N")
+    c4.metric("저평가 추천 여부", "Y" if is_recommended else "N")
+
+    cap_text = "-" if market_cap is None else f"{float(market_cap):,.0f} {currency}"
+    st.caption(f"시가총액: {cap_text} | 매출추세: {trend} | 미추천/미산출 사유: {reason}")
 
 
 def render_recommend_treemap(df: pd.DataFrame) -> None:
