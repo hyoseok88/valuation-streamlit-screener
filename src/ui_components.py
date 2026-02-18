@@ -107,7 +107,7 @@ def render_recommend_treemap(df: pd.DataFrame) -> None:
         },
     )
     fig.update_layout(margin=dict(t=10, l=0, r=0, b=0), height=560)
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, width="stretch")
 
 
 def render_table(df: pd.DataFrame) -> None:
@@ -127,7 +127,7 @@ def render_table(df: pd.DataFrame) -> None:
         "rejection_reason",
         "currency",
     ]
-    st.dataframe(show[cols], use_container_width=True, hide_index=True)
+    st.dataframe(show[cols], width="stretch", hide_index=True)
     st.download_button(
         "CSV 다운로드",
         data=show.to_csv(index=False).encode("utf-8-sig"),
