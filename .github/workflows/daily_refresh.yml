@@ -21,7 +21,8 @@ jobs:
         run: |
           git config user.name github-actions
           git config user.email github-actions@github.com
-          git add data_cache/*.pkl data_cache/cache_meta.json
+          mkdir -p data_cache
+          find data_cache -maxdepth 1 -type f \( -name "*.pkl" -o -name "cache_meta.json" \) -print0 | xargs -0 -r git add
           git diff --staged --quiet || git commit -m "chore: daily cache refresh"
       - name: Push
         run: git push
