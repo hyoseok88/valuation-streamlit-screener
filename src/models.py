@@ -1,4 +1,4 @@
-﻿from dataclasses import dataclass
+﻿from dataclasses import dataclass, field
 from datetime import datetime
 
 
@@ -21,6 +21,7 @@ class FundamentalSnapshot:
     sector: str
     currency: str
     price_series: list[float]
+    ocf_y: list[float] = field(default_factory=list)
 
 
 @dataclass

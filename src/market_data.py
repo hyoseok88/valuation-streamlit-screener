@@ -70,6 +70,25 @@ def _pick_row(df: pd.DataFrame | None, keys: list[str]) -> pd.Series | None:
     return None
 
 
+def _pick_ocf_row(df: pd.DataFrame | None) -> pd.Series | None:
+    """Pick operating cash flow row from a cash-flow statement."""
+    row = _pick_row(df, OCF_KEYS)
+    if row is not None:
+        return row
+    if df is None or df.empty:
+        return None
+
+    # Fallback: broader pattern matching for provider-specific labels.
+    for idx in df.index:
+        text = str(idx).lower().replace(" ", "")
+        if ("operating" in text and "cash" in text and "flow" in text) or (
+            "cashflowfromcontinuingoperatingactivities" in text
+        ):
+            selected = df.loc[idx]
+            return selected.iloc[0] if isinstance(selected, pd.DataFrame) else selected
+    return None
+
+
 @lru_cache(maxsize=1)
 def _kr_marcap_map() -> dict[str, float]:
     try:
@@ -136,23 +155,24 @@ def _extract_market_cap(ticker: yf.Ticker, info: dict, symbol: str, country: str
     return None
 
 
-def _extract_ocf_data(ticker: yf.Ticker, info: dict) -> tuple[list[float], float | None]:
+def _extract_ocf_data(ticker: yf.Ticker, info: dict) -> tuple[list[float], float | None, list[float]]:
     q_cf = _safe_getattr(ticker, "quarterly_cashflow", pd.DataFrame())
-    q_row = _pick_row(q_cf, OCF_KEYS)
-    ocf_q = _series_to_float_list(q_row, max_len=4, newest_first=True)
+    q_row = _pick_ocf_row(q_cf)
+    ocf_q = _series_to_float_list(q_row, max_len=8, newest_first=True)
 
-    ocf_ttm = _safe_float(info.get("operatingCashflow"))
+    # Prefer statement-derived value over info.* (which is often stale/inconsistent).
+    annual_cf = _safe_getattr(ticker, "cashflow", pd.DataFrame())
+    a_row = _pick_ocf_row(annual_cf)
+    annual_vals = _series_to_float_list(a_row, max_len=5, newest_first=True)
+
+    ocf_ttm = annual_vals[0] if annual_vals else None
     if ocf_ttm is None:
-        annual_cf = _safe_getattr(ticker, "cashflow", pd.DataFrame())
-        a_row = _pick_row(annual_cf, OCF_KEYS)
-        annual_vals = _series_to_float_list(a_row, max_len=1, newest_first=True)
-        if annual_vals:
-            ocf_ttm = annual_vals[0]
+        ocf_ttm = _safe_float(info.get("operatingCashflow"))
 
     if ocf_ttm is None and len(ocf_q) >= 2:
         ocf_ttm = float(sum(ocf_q)) * (4.0 / float(len(ocf_q)))
 
-    return ocf_q, ocf_ttm
+    return ocf_q, ocf_ttm, annual_vals
 
 
 def _extract_revenue_yearly(ticker: yf.Ticker) -> list[float]:
@@ -206,7 +226,7 @@ def fetch_snapshot(symbols: list[str], country: str) -> dict[str, FundamentalSna
         info = _safe_getattr(ticker, "info", {}) or {}
 
         market_cap = _extract_market_cap(ticker, info, symbol, country)
-        ocf_q, ocf_ttm = _extract_ocf_data(ticker, info)
+        ocf_q, ocf_ttm, ocf_y = _extract_ocf_data(ticker, info)
         revenue_y = _extract_revenue_yearly(ticker)
 
         try:
@@ -236,6 +256,7 @@ def fetch_snapshot(symbols: list[str], country: str) -> dict[str, FundamentalSna
             sector=sector,
             currency=currency or "N/A",
             price_series=price_series,
+            ocf_y=ocf_y,
         )
 
     return snapshots

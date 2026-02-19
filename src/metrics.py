@@ -28,10 +28,20 @@ def compute_multiple(snapshot: FundamentalSnapshot) -> tuple[float | None, str]:
     if snapshot.market_cap is None:
         return None, "시총 데이터 부족"
 
+    # Primary: latest 4-quarter OCF.
+    ocf_sum = None
     if len(snapshot.ocf_q) >= 4:
         ocf_sum = float(np.nansum(snapshot.ocf_q[:4]))
+        if ocf_sum <= 0 and len(snapshot.ocf_q) >= 8:
+            # Relaxation 1: annualized average of latest 8 quarters.
+            ocf_sum = float(np.nansum(snapshot.ocf_q[:8]) / 2.0)
+        if ocf_sum <= 0 and len(snapshot.ocf_y) >= 3:
+            # Relaxation 2: 3-year average annual OCF.
+            ocf_sum = float(np.nansum(snapshot.ocf_y[:3]) / 3.0)
     elif snapshot.ocf_ttm is not None:
         ocf_sum = float(snapshot.ocf_ttm)
+        if ocf_sum <= 0 and len(snapshot.ocf_y) >= 3:
+            ocf_sum = float(np.nansum(snapshot.ocf_y[:3]) / 3.0)
     else:
         return None, "OCF 데이터 부족"
 
@@ -43,10 +53,12 @@ def compute_multiple(snapshot: FundamentalSnapshot) -> tuple[float | None, str]:
 
 def classify_sales_trend(revenue_5y: list[float]) -> str:
     vals = [float(v) for v in revenue_5y if v is not None and not math.isnan(float(v))]
-    if len(vals) <= 4:
+    # In practice many providers expose only 4 annual points.
+    # Use 4+ points for trend classification to avoid frequent "판정불가".
+    if len(vals) < 4:
         return "판정불가"
 
-    y = np.array(vals[:5], dtype=float)
+    y = np.array(vals[-5:], dtype=float)
     x = np.arange(len(y), dtype=float)
 
     slope, intercept = np.polyfit(x, y, 1)

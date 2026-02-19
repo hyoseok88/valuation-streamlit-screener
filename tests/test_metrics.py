@@ -16,6 +16,7 @@ def _snapshot(market_cap, ocf_q, revenue_y, prices, ocf_ttm=None):
         sector="Tech",
         currency="USD",
         price_series=prices,
+        ocf_y=[],
     )
 
 
@@ -33,6 +34,26 @@ def test_compute_multiple_ocf_non_positive():
     assert reason == "OCF<=0"
 
 
+def test_compute_multiple_relax_with_8q_average():
+    snap = _snapshot(
+        1000.0,
+        [-20.0, -10.0, -10.0, -10.0, 50.0, 50.0, 50.0, 50.0],
+        [1, 2, 3, 4, 5],
+        [],
+    )
+    v, reason = compute_multiple(snap)
+    assert reason == ""
+    assert round(v, 4) == 13.3333
+
+
+def test_compute_multiple_relax_with_3y_average():
+    snap = _snapshot(1000.0, [-20.0, -10.0, -10.0, -10.0], [1, 2, 3, 4, 5], [])
+    snap.ocf_y = [120.0, 90.0, 90.0]
+    v, reason = compute_multiple(snap)
+    assert reason == ""
+    assert round(v, 4) == 10.0
+
+
 def test_compute_multiple_ttm_fallback():
     snap = _snapshot(1400.0, [200.0, 100.0], [1, 2, 3, 4, 5], [], ocf_ttm=100.0)
     v, reason = compute_multiple(snap)
@@ -44,7 +65,8 @@ def test_sales_trend_labels():
     assert classify_sales_trend([100, 110, 130, 160, 200]) in {"우상향", "횡보"}
     assert classify_sales_trend([200, 180, 160, 150, 130]) in {"우하향", "횡보"}
     assert classify_sales_trend([100, 100, 100, 100, 100]) == "횡보"
-    assert classify_sales_trend([100, 101, 102, 103]) == "판정불가"
+    assert classify_sales_trend([100, 101, 102, 103]) in {"우상향", "횡보"}
+    assert classify_sales_trend([100, 101, 102]) == "판정불가"
 
 
 def test_evaluate_vip_boolean():

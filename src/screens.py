@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import pandas as pd
 
@@ -128,3 +128,4 @@ def apply_filters(df: pd.DataFrame, filters: dict) -> pd.DataFrame:
         ]
 
     return out
+
