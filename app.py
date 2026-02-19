@@ -11,6 +11,7 @@ from src.ui_components import (
     render_filters,
     render_hero,
     render_recommend_treemap,
+    render_strong_recommendations,
     render_single_ticker_result,
     render_table,
 )
@@ -30,7 +31,7 @@ def _lookup_ticker(country: str, ticker_input: str):
 def _load_or_build(country: str, force_refresh: bool):
     if not force_refresh:
         cached = load_country_frame(country)
-        if cached is not None and not cached.empty:
+        if cached is not None and not cached.empty and "strong_recommend" in cached.columns:
             return cached, True
 
     fresh = _refresh_country(country)
@@ -74,6 +75,7 @@ def main() -> None:
 
     render_hero(COUNTRY_LABELS[country], updated_at, filtered)
     render_single_ticker_result(ticker_result)
+    render_strong_recommendations(filtered)
     render_recommend_treemap(filtered)
     render_table(filtered)
 

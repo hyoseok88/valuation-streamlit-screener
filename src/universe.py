@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 from io import StringIO
 from pathlib import Path
@@ -24,6 +24,8 @@ def _normalize_symbol(country: str, symbol: str) -> str:
         return f"{symbol}.T"
     if country == "US_TOP500":
         return symbol.replace(".", "-")
+    if country == "EU_TOP200":
+        return symbol.replace(" ", "")
     return symbol
 
 
@@ -71,7 +73,6 @@ def _extract_symbol_name(table: pd.DataFrame) -> list[dict[str, str]]:
             name_col = matched[0]
             break
     if name_col is None:
-        # Use second column as fallback.
         if len(cols) >= 2:
             name_col = cols[1]
         else:
@@ -101,32 +102,16 @@ def _merge_candidates(country: str, *candidate_lists: list[dict[str, str]]) -> l
     return list(merged.values())
 
 
-def _kr_candidates_fdr() -> list[dict[str, str]]:
-    try:
-        import FinanceDataReader as fdr
-
-        listed = fdr.StockListing("KRX")
-    except Exception:
-        return []
-    if listed is None or listed.empty:
-        return []
-    out = []
-    for _, row in listed.iterrows():
-        code = str(row.get("Code", "")).zfill(6)
-        if code.isdigit():
-            out.append({"symbol": f"{code}.KS", "name": str(row.get("Name", code))})
-    return out
-
-
 def _kr_candidates_naver(max_pages: int = 30) -> list[dict[str, str]]:
     try:
         from bs4 import BeautifulSoup
     except Exception:
         return []
 
-    rows: list[dict[str, str | float]] = []
+    rows: list[dict[str, str | int]] = []
     base = "https://finance.naver.com/sise/sise_market_sum.naver"
     headers = {"User-Agent": "Mozilla/5.0"}
+    rank = 0
 
     for sosok in [0, 1]:  # 0: KOSPI, 1: KOSDAQ
         for page in range(1, max_pages + 1):
@@ -137,53 +122,23 @@ def _kr_candidates_naver(max_pages: int = 30) -> list[dict[str, str]]:
                 continue
 
             soup = BeautifulSoup(html, "html.parser")
-            name_to_code: dict[str, str] = {}
-            for a in soup.select("a.tltle"):
+            links = soup.select("a.tltle")
+            if not links:
+                continue
+            for a in links:
                 name = a.get_text(strip=True)
                 href = a.get("href", "")
                 m = re.search(r"code=(\d{6})", href)
-                if name and m:
-                    name_to_code[name] = m.group(1)
-
-            try:
-                tables = pd.read_html(StringIO(html))
-            except Exception:
-                continue
-            if not tables:
-                continue
-            t = tables[1] if len(tables) > 1 else tables[0]
-            if "종목명" not in t.columns:
-                continue
-            t = t.dropna(subset=["종목명"]).copy()
-            if "시가총액" in t.columns:
-                t["시가총액"] = (
-                    t["시가총액"]
-                    .astype(str)
-                    .str.replace(",", "", regex=False)
-                    .str.replace("-", "", regex=False)
-                )
-                t["시가총액"] = pd.to_numeric(t["시가총액"], errors="coerce")
-            else:
-                t["시가총액"] = pd.NA
-
-            for _, row in t.iterrows():
-                name = str(row.get("종목명", "")).strip()
-                code = name_to_code.get(name, "")
-                if not code:
+                if not (name and m):
                     continue
-                rows.append(
-                    {
-                        "symbol": f"{code}.KS",
-                        "name": name,
-                        "marcap": float(row["시가총액"]) if pd.notna(row["시가총액"]) else 0.0,
-                    }
-                )
+                rank += 1
+                rows.append({"symbol": f"{m.group(1)}.KS", "name": name, "rank": rank})
 
     if not rows:
         return []
 
     df = pd.DataFrame(rows)
-    df = df.sort_values("marcap", ascending=False).drop_duplicates(subset=["symbol"], keep="first")
+    df = df.sort_values("rank", ascending=True).drop_duplicates(subset=["symbol"], keep="first")
     return [
         {"symbol": str(r["symbol"]), "name": str(r["name"])}
         for _, r in df.iterrows()
@@ -224,29 +179,51 @@ def _jp_candidates_fdr() -> list[dict[str, str]]:
 
 
 def _eu_candidates_from_indexes() -> list[dict[str, str]]:
-    urls = [
-        "https://en.wikipedia.org/wiki/FTSE_100_Index",
-        "https://en.wikipedia.org/wiki/DAX",
-        "https://en.wikipedia.org/wiki/CAC_40",
-        "https://en.wikipedia.org/wiki/AEX_index",
-        "https://en.wikipedia.org/wiki/Swiss_Market_Index",
-        "https://en.wikipedia.org/wiki/IBEX_35",
-        "https://en.wikipedia.org/wiki/FTSE_MIB",
-        "https://en.wikipedia.org/wiki/OMX_Stockholm_30",
+    sources = [
+        ("https://en.wikipedia.org/wiki/FTSE_100_Index", ".L"),
+        ("https://en.wikipedia.org/wiki/DAX", ".DE"),
+        ("https://en.wikipedia.org/wiki/CAC_40", ".PA"),
+        ("https://en.wikipedia.org/wiki/AEX_index", ".AS"),
+        ("https://en.wikipedia.org/wiki/Swiss_Market_Index", ".SW"),
+        ("https://en.wikipedia.org/wiki/IBEX_35", ".MC"),
+        ("https://en.wikipedia.org/wiki/FTSE_MIB", ".MI"),
+        ("https://en.wikipedia.org/wiki/OMX_Stockholm_30", ".ST"),
     ]
+    prefixes = (
+        "LON:", "EPA:", "ETR:", "SWX:", "BME:", "BIT:", "AMS:", "OMX:",
+        "STO:", "CPH:", "HEL:", "VTX:", "FRA:", "MCE:",
+    )
+
     gathered: list[dict[str, str]] = []
-    for url in urls:
+    for url, default_suffix in sources:
         tables = _fetch_wiki_tables(url)
         for table in tables:
             extracted = _extract_symbol_name(table)
-            if extracted:
-                gathered.extend(extracted)
+            for item in extracted:
+                raw = str(item.get("symbol", "")).strip().upper().replace(" ", "")
+                name = str(item.get("name", "")).strip()
+                if not raw or raw == "NAN":
+                    continue
+                for p in prefixes:
+                    if raw.startswith(p):
+                        raw = raw[len(p):]
+                        break
+                raw = raw.replace("/", "-")
+                if default_suffix == ".L" and "." in raw and not raw.endswith(".L"):
+                    parts = raw.split(".")
+                    if len(parts) == 2 and len(parts[1]) == 1:
+                        raw = f"{parts[0]}-{parts[1]}"
+                if "." not in raw:
+                    raw = f"{raw}{default_suffix}"
+                if not re.fullmatch(r"[A-Z0-9\-]+\.[A-Z]{1,3}", raw):
+                    continue
+                gathered.append({"symbol": raw, "name": name})
+
     return gathered
 
 
 def get_top_universe(country: str, n: int) -> list[UniverseRecord]:
     if country == "KR_TOP200":
-        # KR uses FDR market-cap ranking directly when available.
         try:
             import FinanceDataReader as fdr
 

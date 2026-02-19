@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from functools import lru_cache
+import time
 
 import pandas as pd
 import yfinance as yf
@@ -36,11 +37,35 @@ def _safe_float(value) -> float | None:
 
 
 def _safe_getattr(obj, attr: str, default):
-    try:
-        value = getattr(obj, attr)
-        return default if value is None else value
-    except Exception:
-        return default
+    for i in range(4):
+        try:
+            value = getattr(obj, attr)
+            return default if value is None else value
+        except Exception as exc:
+            if i >= 3:
+                return default
+            msg = str(exc).lower()
+            if "too many requests" in msg or "rate limit" in msg:
+                time.sleep(0.7 * (2**i))
+            else:
+                time.sleep(0.2)
+    return default
+
+
+def _safe_history(ticker: yf.Ticker, period: str, interval: str) -> pd.DataFrame:
+    for i in range(4):
+        try:
+            out = ticker.history(period=period, interval=interval, auto_adjust=False)
+            return out if isinstance(out, pd.DataFrame) else pd.DataFrame()
+        except Exception as exc:
+            if i >= 3:
+                return pd.DataFrame()
+            msg = str(exc).lower()
+            if "too many requests" in msg or "rate limit" in msg:
+                time.sleep(0.7 * (2**i))
+            else:
+                time.sleep(0.2)
+    return pd.DataFrame()
 
 
 def _series_to_float_list(series: pd.Series | None, max_len: int | None = None, newest_first: bool = True) -> list[float]:
@@ -139,7 +164,7 @@ def _extract_market_cap(ticker: yf.Ticker, info: dict, symbol: str, country: str
         hist = _safe_getattr(ticker, "history", pd.DataFrame())
         if callable(hist):
             try:
-                hist = ticker.history(period="5d", interval="1d", auto_adjust=False)
+                hist = _safe_history(ticker, period="5d", interval="1d")
             except Exception:
                 hist = pd.DataFrame()
         if isinstance(hist, pd.DataFrame) and not hist.empty and "Close" in hist.columns:
@@ -215,6 +240,7 @@ def fetch_overview_batch(symbols: list[str]) -> dict[str, dict]:
             }
         except Exception:
             out[symbol] = {}
+        time.sleep(0.05)
     return out
 
 
@@ -229,10 +255,7 @@ def fetch_snapshot(symbols: list[str], country: str) -> dict[str, FundamentalSna
         ocf_q, ocf_ttm, ocf_y = _extract_ocf_data(ticker, info)
         revenue_y = _extract_revenue_yearly(ticker)
 
-        try:
-            hist = ticker.history(period="18mo", interval="1d", auto_adjust=False)
-        except Exception:
-            hist = pd.DataFrame()
+        hist = _safe_history(ticker, period="18mo", interval="1d")
         price_series = (
             pd.to_numeric(hist["Close"], errors="coerce").dropna().astype(float).tolist()
             if isinstance(hist, pd.DataFrame) and not hist.empty and "Close" in hist.columns
@@ -258,5 +281,6 @@ def fetch_snapshot(symbols: list[str], country: str) -> dict[str, FundamentalSna
             price_series=price_series,
             ocf_y=ocf_y,
         )
+        time.sleep(0.05)
 
     return snapshots

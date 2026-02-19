@@ -2,7 +2,7 @@
 
 import pandas as pd
 
-from .config import COUNTRY_LIMITS
+from .config import COUNTRY_LIMITS, COUNTRY_SEED_FILES
 from .market_data import fetch_overview_batch, fetch_snapshot
 from .metrics import evaluate_snapshot
 from .universe import get_top_universe
@@ -12,20 +12,44 @@ def _norm_token(text: str) -> str:
     return "".join(ch for ch in (text or "").upper() if ch.isalnum())
 
 
-def _resolve_kr_alias(ticker: str) -> str:
+def _resolve_alias_by_seed(country: str, ticker: str) -> str:
+    key = _norm_token(ticker)
+    if not key:
+        return ticker
+    path = COUNTRY_SEED_FILES.get(country)
+    if not path:
+        return ticker
+    try:
+        df = pd.read_csv(path, dtype={"symbol": str}, keep_default_na=False)
+    except Exception:
+        return ticker
+    for _, row in df.iterrows():
+        sym = str(row.get("symbol", "")).strip().upper()
+        name = str(row.get("name", "")).strip()
+        if not sym:
+            continue
+        base = sym.split(".")[0]
+        if key in {_norm_token(sym), _norm_token(base), _norm_token(name)}:
+            return sym
+        if key and key in _norm_token(name):
+            return sym
+    return ticker
+
+
+def _resolve_alias_by_universe(country: str, ticker: str) -> str:
     key = _norm_token(ticker)
     if not key:
         return ticker
     try:
-        universe = get_top_universe("KR_TOP200", COUNTRY_LIMITS["KR_TOP200"])
+        universe = get_top_universe(country, COUNTRY_LIMITS[country])
     except Exception:
         return ticker
 
     for item in universe:
         sym = (item.symbol or "").upper()
-        code = sym.replace(".KS", "")
+        base = sym.split(".")[0]
         name = _norm_token(item.name or "")
-        if key == code or key == _norm_token(sym) or key == name:
+        if key == _norm_token(sym) or key == _norm_token(base) or key == name:
             return sym
         if key and (key in name):
             return sym
@@ -42,12 +66,30 @@ def normalize_ticker_input(country: str, ticker_input: str) -> str:
         digits = "".join(ch for ch in ticker if ch.isdigit())
         if digits and len(digits) <= 6:
             return f"{digits.zfill(6)}.KS"
-        return _resolve_kr_alias(ticker)
-    if country == "JP_TOP200" and ticker.isdigit():
-        return f"{ticker}.T"
+        seeded = _resolve_alias_by_seed(country, ticker)
+        if seeded != ticker:
+            return normalize_ticker_input(country, seeded)
+        return _resolve_alias_by_universe(country, ticker)
+    if country == "JP_TOP200":
+        if ticker.isdigit():
+            return f"{ticker}.T"
+        seeded = _resolve_alias_by_seed(country, ticker)
+        if seeded != ticker:
+            return seeded
+        return _resolve_alias_by_universe(country, ticker)
     if country == "US_TOP500":
-        return ticker.replace(".", "-")
-    return ticker
+        seeded = _resolve_alias_by_seed(country, ticker)
+        if seeded != ticker:
+            return seeded.replace(".", "-")
+        return ticker.replace(".", "-") if "." in ticker else _resolve_alias_by_universe(country, ticker)
+    if country == "EU_TOP200":
+        if "." in ticker:
+            return ticker
+        seeded = _resolve_alias_by_seed(country, ticker)
+        if seeded != ticker:
+            return seeded
+        return _resolve_alias_by_universe(country, ticker)
+    return _resolve_alias_by_universe(country, ticker)
 
 
 def build_single_ticker_result(country: str, ticker_input: str) -> dict | None:
@@ -63,6 +105,7 @@ def build_single_ticker_result(country: str, ticker_input: str) -> dict | None:
             "multiple": None,
             "vip_pass": False,
             "is_recommended": False,
+            "strong_recommend": False,
             "sales_trend": "판정불가",
             "rejection_reason": "조회 실패",
             "market_cap": None,
@@ -77,12 +120,18 @@ def build_single_ticker_result(country: str, ticker_input: str) -> dict | None:
         snap.currency = overview["currency"]
 
     signal = evaluate_snapshot(snap)
+    strong_recommend = (
+        signal.sales_trend == "우상향"
+        and signal.multiple is not None
+        and float(signal.multiple) <= 10.0
+    )
     return {
         "symbol": symbol,
         "name": overview.get("name") or symbol,
         "multiple": signal.multiple,
         "vip_pass": signal.vip_pass,
         "is_recommended": signal.is_recommended,
+        "strong_recommend": bool(strong_recommend),
         "sales_trend": signal.sales_trend,
         "rejection_reason": signal.rejection_reason,
         "market_cap": snap.market_cap,
@@ -112,6 +161,7 @@ def build_recommendations(country: str, filters: dict | None = None) -> pd.DataF
                     "market_cap": None,
                     "multiple": None,
                     "is_recommended": False,
+                    "strong_recommend": False,
                     "sales_trend": "판정불가",
                     "vip_pass": False,
                     "rejection_reason": "조회 실패",
@@ -120,6 +170,11 @@ def build_recommendations(country: str, filters: dict | None = None) -> pd.DataF
             )
             continue
         signal = evaluate_snapshot(snap)
+        strong_recommend = (
+            signal.sales_trend == "우상향"
+            and signal.multiple is not None
+            and float(signal.multiple) <= 10.0
+        )
         rows.append(
             {
                 "country": country,
@@ -130,6 +185,7 @@ def build_recommendations(country: str, filters: dict | None = None) -> pd.DataF
                 "market_cap": snap.market_cap,
                 "multiple": signal.multiple,
                 "is_recommended": signal.is_recommended,
+                "strong_recommend": bool(strong_recommend),
                 "sales_trend": signal.sales_trend,
                 "vip_pass": signal.vip_pass,
                 "rejection_reason": signal.rejection_reason,
@@ -143,8 +199,12 @@ def build_recommendations(country: str, filters: dict | None = None) -> pd.DataF
 
     df = apply_filters(df, filters)
 
+    df["_strong_sort"] = df.get("strong_recommend", False).astype(int)
     df["_rec_sort"] = df["is_recommended"].astype(int)
-    df = df.sort_values(by=["_rec_sort", "market_cap"], ascending=[False, False]).drop(columns=["_rec_sort"])
+    df = df.sort_values(
+        by=["_strong_sort", "_rec_sort", "market_cap"],
+        ascending=[False, False, False],
+    ).drop(columns=["_strong_sort", "_rec_sort"])
     return df.reset_index(drop=True)
 
 

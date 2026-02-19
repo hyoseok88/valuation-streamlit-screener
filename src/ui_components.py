@@ -8,6 +8,7 @@ import streamlit as st
 
 def render_hero(country_label: str, updated_at: str, df: pd.DataFrame) -> None:
     rec_count = int(df["is_recommended"].sum()) if not df.empty else 0
+    strong_count = int(df.get("strong_recommend", pd.Series(dtype=bool)).sum()) if not df.empty else 0
     med = float(df["multiple"].dropna().median()) if not df.empty and df["multiple"].notna().any() else float("nan")
     coverage = float(df["multiple"].notna().mean() * 100.0) if not df.empty else 0.0
     st.markdown(
@@ -20,11 +21,12 @@ def render_hero(country_label: str, updated_at: str, df: pd.DataFrame) -> None:
         unsafe_allow_html=True,
     )
 
-    c1, c2, c3, c4 = st.columns(4)
+    c1, c2, c3, c4, c5 = st.columns(5)
     c1.metric("추천 종목 수", rec_count)
-    c2.metric("표본 종목 수", len(df))
-    c3.metric("중앙 멀티플", "-" if np.isnan(med) else f"{med:.2f}")
-    c4.metric("지표 산출률", f"{coverage:.1f}%")
+    c2.metric("강력추천 수", strong_count)
+    c3.metric("표본 종목 수", len(df))
+    c4.metric("중앙 멀티플", "-" if np.isnan(med) else f"{med:.2f}")
+    c5.metric("지표 산출률", f"{coverage:.1f}%")
 
     if not df.empty and df["multiple"].isna().any():
         missing_reasons = (
@@ -68,16 +70,18 @@ def render_single_ticker_result(result: dict | None) -> None:
     multiple = result.get("multiple")
     vip_pass = bool(result.get("vip_pass"))
     is_recommended = bool(result.get("is_recommended"))
+    strong_recommend = bool(result.get("strong_recommend"))
     reason = result.get("rejection_reason") or "-"
     trend = result.get("sales_trend") or "판정불가"
     market_cap = result.get("market_cap")
     currency = result.get("currency") or "N/A"
 
-    c1, c2, c3, c4 = st.columns(4)
+    c1, c2, c3, c4, c5 = st.columns(5)
     c1.metric("종목", f"{name} ({symbol})")
     c2.metric("멀티플", "-" if multiple is None else f"{float(multiple):.2f}")
     c3.metric("VIP 추천 여부", "Y" if vip_pass else "N")
     c4.metric("저평가 추천 여부", "Y" if is_recommended else "N")
+    c5.metric("강력추천 여부", "Y" if strong_recommend else "N")
 
     cap_text = "-" if market_cap is None else f"{float(market_cap):,.0f} {currency}"
     st.caption(f"시가총액: {cap_text} | 매출추세: {trend} | 미추천/미산출 사유: {reason}")
@@ -110,12 +114,40 @@ def render_recommend_treemap(df: pd.DataFrame) -> None:
     st.plotly_chart(fig, use_container_width=True)
 
 
+def render_strong_recommendations(df: pd.DataFrame) -> None:
+    st.subheader("강력추천 (우상향 + 멀티플<=10)")
+    if df.empty or "strong_recommend" not in df.columns:
+        st.info("강력추천 종목이 없습니다.")
+        return
+
+    strong = df[df["strong_recommend"]].copy()
+    if strong.empty:
+        st.info("강력추천 종목이 없습니다.")
+        return
+
+    strong["강력추천"] = "Y"
+    cols = [
+        "강력추천",
+        "symbol",
+        "name",
+        "sector",
+        "market_cap",
+        "multiple",
+        "sales_trend",
+        "currency",
+    ]
+    strong = strong.sort_values(by=["multiple", "market_cap"], ascending=[True, False])
+    st.dataframe(strong[cols], use_container_width=True, hide_index=True)
+
+
 def render_table(df: pd.DataFrame) -> None:
     st.subheader("상세 테이블")
     show = df.copy()
     show["추천"] = np.where(show["is_recommended"], "Y", "N")
+    show["강력추천"] = np.where(show.get("strong_recommend", False), "Y", "N")
     show["VIP"] = np.where(show["vip_pass"], "Y", "N")
     cols = [
+        "강력추천",
         "추천",
         "VIP",
         "symbol",
