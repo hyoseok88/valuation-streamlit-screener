@@ -1,14 +1,14 @@
 ﻿from pathlib import Path
 
 COUNTRY_LIMITS = {
-    "KR_TOP200": 200,
+    "KR_TOP200": 500,
     "US_TOP500": 500,
     "JP_TOP200": 200,
     "EU_TOP200": 200,
 }
 
 COUNTRY_LABELS = {
-    "KR_TOP200": "Korea Top 200",
+    "KR_TOP200": "Korea Top 500",
     "US_TOP500": "US Top 500",
     "JP_TOP200": "Japan Top 200",
     "EU_TOP200": "Europe Top 200",

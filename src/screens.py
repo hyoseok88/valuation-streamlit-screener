@@ -8,12 +8,41 @@ from .metrics import evaluate_snapshot
 from .universe import get_top_universe
 
 
+def _norm_token(text: str) -> str:
+    return "".join(ch for ch in (text or "").upper() if ch.isalnum())
+
+
+def _resolve_kr_alias(ticker: str) -> str:
+    key = _norm_token(ticker)
+    if not key:
+        return ticker
+    try:
+        universe = get_top_universe("KR_TOP200", COUNTRY_LIMITS["KR_TOP200"])
+    except Exception:
+        return ticker
+
+    for item in universe:
+        sym = (item.symbol or "").upper()
+        code = sym.replace(".KS", "")
+        name = _norm_token(item.name or "")
+        if key == code or key == _norm_token(sym) or key == name:
+            return sym
+        if key and (key in name):
+            return sym
+    return ticker
+
+
 def normalize_ticker_input(country: str, ticker_input: str) -> str:
     ticker = (ticker_input or "").strip().upper()
     if not ticker:
         return ""
-    if country == "KR_TOP200" and ticker.isdigit() and len(ticker) == 6:
-        return f"{ticker}.KS"
+    if country == "KR_TOP200":
+        if ticker.endswith(".KS"):
+            return ticker
+        digits = "".join(ch for ch in ticker if ch.isdigit())
+        if digits and len(digits) <= 6:
+            return f"{digits.zfill(6)}.KS"
+        return _resolve_kr_alias(ticker)
     if country == "JP_TOP200" and ticker.isdigit():
         return f"{ticker}.T"
     if country == "US_TOP500":
@@ -73,6 +102,22 @@ def build_recommendations(country: str, filters: dict | None = None) -> pd.DataF
     for item in universe:
         snap = snapshots.get(item.symbol)
         if snap is None:
+            rows.append(
+                {
+                    "country": country,
+                    "symbol": item.symbol,
+                    "name": item.name,
+                    "sector": item.sector or "Unknown",
+                    "currency": item.currency or "N/A",
+                    "market_cap": None,
+                    "multiple": None,
+                    "is_recommended": False,
+                    "sales_trend": "판정불가",
+                    "vip_pass": False,
+                    "rejection_reason": "조회 실패",
+                    "asof_date": None,
+                }
+            )
             continue
         signal = evaluate_snapshot(snap)
         rows.append(

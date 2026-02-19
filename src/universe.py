@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from io import StringIO
 from pathlib import Path
+import re
 
 import pandas as pd
 import requests
@@ -12,8 +13,13 @@ from .models import UniverseRecord
 
 def _normalize_symbol(country: str, symbol: str) -> str:
     symbol = str(symbol).strip().upper()
-    if country == "KR_TOP200" and symbol.isdigit():
-        return f"{symbol.zfill(6)}.KS"
+    if country == "KR_TOP200":
+        if symbol.endswith(".KS"):
+            base = symbol[:-3]
+            return symbol if base.isdigit() and len(base) == 6 else ""
+        if symbol.isdigit():
+            return f"{symbol.zfill(6)}.KS"
+        return ""
     if country == "JP_TOP200" and symbol.isdigit():
         return f"{symbol}.T"
     if country == "US_TOP500":
@@ -112,6 +118,79 @@ def _kr_candidates_fdr() -> list[dict[str, str]]:
     return out
 
 
+def _kr_candidates_naver(max_pages: int = 30) -> list[dict[str, str]]:
+    try:
+        from bs4 import BeautifulSoup
+    except Exception:
+        return []
+
+    rows: list[dict[str, str | float]] = []
+    base = "https://finance.naver.com/sise/sise_market_sum.naver"
+    headers = {"User-Agent": "Mozilla/5.0"}
+
+    for sosok in [0, 1]:  # 0: KOSPI, 1: KOSDAQ
+        for page in range(1, max_pages + 1):
+            url = f"{base}?sosok={sosok}&page={page}"
+            try:
+                html = requests.get(url, headers=headers, timeout=20).text
+            except Exception:
+                continue
+
+            soup = BeautifulSoup(html, "html.parser")
+            name_to_code: dict[str, str] = {}
+            for a in soup.select("a.tltle"):
+                name = a.get_text(strip=True)
+                href = a.get("href", "")
+                m = re.search(r"code=(\d{6})", href)
+                if name and m:
+                    name_to_code[name] = m.group(1)
+
+            try:
+                tables = pd.read_html(StringIO(html))
+            except Exception:
+                continue
+            if not tables:
+                continue
+            t = tables[1] if len(tables) > 1 else tables[0]
+            if "종목명" not in t.columns:
+                continue
+            t = t.dropna(subset=["종목명"]).copy()
+            if "시가총액" in t.columns:
+                t["시가총액"] = (
+                    t["시가총액"]
+                    .astype(str)
+                    .str.replace(",", "", regex=False)
+                    .str.replace("-", "", regex=False)
+                )
+                t["시가총액"] = pd.to_numeric(t["시가총액"], errors="coerce")
+            else:
+                t["시가총액"] = pd.NA
+
+            for _, row in t.iterrows():
+                name = str(row.get("종목명", "")).strip()
+                code = name_to_code.get(name, "")
+                if not code:
+                    continue
+                rows.append(
+                    {
+                        "symbol": f"{code}.KS",
+                        "name": name,
+                        "marcap": float(row["시가총액"]) if pd.notna(row["시가총액"]) else 0.0,
+                    }
+                )
+
+    if not rows:
+        return []
+
+    df = pd.DataFrame(rows)
+    df = df.sort_values("marcap", ascending=False).drop_duplicates(subset=["symbol"], keep="first")
+    return [
+        {"symbol": str(r["symbol"]), "name": str(r["name"])}
+        for _, r in df.iterrows()
+        if str(r["symbol"]).endswith(".KS")
+    ]
+
+
 def _us_candidates_fdr() -> list[dict[str, str]]:
     try:
         import FinanceDataReader as fdr
@@ -171,12 +250,23 @@ def get_top_universe(country: str, n: int) -> list[UniverseRecord]:
         try:
             import FinanceDataReader as fdr
 
-            listed = fdr.StockListing("KRX")
-            if listed is not None and not listed.empty:
-                work = listed.copy()
+            frames = []
+            for market in ["KRX", "KOSPI", "KOSDAQ", "KONEX"]:
+                try:
+                    listed = fdr.StockListing(market)
+                except Exception:
+                    listed = None
+                if listed is not None and not listed.empty:
+                    frames.append(listed.copy())
+
+            if frames:
+                work = pd.concat(frames, axis=0, ignore_index=True).drop_duplicates(subset=["Code"], keep="first")
                 work["Code"] = work["Code"].astype(str).str.zfill(6)
+                work = work[work["Code"].str.fullmatch(r"\d{6}", na=False)]
                 work["Marcap"] = pd.to_numeric(work.get("Marcap"), errors="coerce")
-                work = work.dropna(subset=["Marcap"]).sort_values("Marcap", ascending=False).head(n)
+                with_cap = work[work["Marcap"].notna()].sort_values("Marcap", ascending=False)
+                without_cap = work[work["Marcap"].isna()].sort_values("Code", ascending=True)
+                work = pd.concat([with_cap, without_cap], axis=0, ignore_index=True).head(n)
                 return [
                     UniverseRecord(
                         symbol=f"{row['Code']}.KS",
@@ -189,7 +279,7 @@ def get_top_universe(country: str, n: int) -> list[UniverseRecord]:
                 ]
         except Exception:
             pass
-        candidates = _merge_candidates(country, _load_seed(country))
+        candidates = _merge_candidates(country, _kr_candidates_naver(), _load_seed(country))
     elif country == "US_TOP500":
         candidates = _merge_candidates(country, _us_candidates_fdr(), _load_seed(country))
     elif country == "JP_TOP200":
