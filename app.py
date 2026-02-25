@@ -5,12 +5,19 @@ from datetime import datetime, timezone
 import streamlit as st
 
 from src.cache_store import load_country_frame, load_meta, save_country_frame, save_meta
-from src.config import COUNTRY_LABELS, COUNTRY_LIMITS
+from src.config import (
+    COUNTRY_LABELS,
+    COUNTRY_LIMITS,
+    TARGET_PRICE_DEFAULT_FLOAT_RATE,
+    TARGET_PRICE_DEFAULT_MULTIPLIER,
+)
 from src.screens import apply_filters, build_recommendations, build_single_ticker_result
+from src.target_price import apply_target_price_formula, build_target_price_base
 from src.ui_components import (
     render_filters,
     render_hero,
     render_recommend_treemap,
+    render_target_price_result,
     render_strong_recommendations,
     render_single_ticker_result,
     render_table,
@@ -26,6 +33,11 @@ def _refresh_country(country: str):
 @st.cache_data(show_spinner=False, ttl=60 * 10)
 def _lookup_ticker(country: str, ticker_input: str):
     return build_single_ticker_result(country, ticker_input)
+
+
+@st.cache_data(show_spinner=False, ttl=60 * 10)
+def _target_base(country: str, ticker_input: str):
+    return build_target_price_base(country, ticker_input)
 
 
 def _load_or_build(country: str, force_refresh: bool):
@@ -45,12 +57,48 @@ def main() -> None:
     st.set_page_config(page_title="Undervalued Valuation Screener", layout="wide")
     st.markdown(inject_theme(), unsafe_allow_html=True)
 
+    st.sidebar.title("메뉴")
+    menu = st.sidebar.radio(
+        "선택",
+        options=[
+            "저평가 종목 찾기",
+            "검색종목 목표가 산출(Target Price Calculator)",
+        ],
+    )
+
     st.sidebar.title("시장 선택")
     country = st.sidebar.radio(
         "유니버스",
         options=list(COUNTRY_LIMITS.keys()),
         format_func=lambda x: COUNTRY_LABELS[x],
     )
+    if menu == "검색종목 목표가 산출(Target Price Calculator)":
+        st.sidebar.subheader("입력")
+        ticker_input = st.sidebar.text_input("종목 코드/명", value="", placeholder="예: 005930, 삼성전자, AAPL")
+        float_rate = st.sidebar.number_input(
+            "유동비율 (%)",
+            min_value=1.0,
+            max_value=100.0,
+            value=float(TARGET_PRICE_DEFAULT_FLOAT_RATE),
+            step=1.0,
+            help="반드시 이 입력값으로 유통 시가총액을 계산합니다.",
+        )
+        multiplier = st.sidebar.slider(
+            "목표가 배수 (Multiplier)",
+            min_value=0.1,
+            max_value=5.0,
+            value=float(TARGET_PRICE_DEFAULT_MULTIPLIER),
+            step=0.1,
+        )
+        result = None
+        if ticker_input.strip():
+            with st.spinner("목표가를 계산하는 중입니다..."):
+                base = _target_base(country, ticker_input)
+                if base is not None:
+                    result = apply_target_price_formula(base, float_rate, multiplier)
+        render_target_price_result(result)
+        return
+
     force_refresh = st.sidebar.button("데이터 새로고침")
 
     with st.spinner("데이터를 불러오는 중입니다..."):

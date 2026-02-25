@@ -3,6 +3,7 @@
 import numpy as np
 import pandas as pd
 import plotly.express as px
+import plotly.graph_objects as go
 import streamlit as st
 
 
@@ -166,3 +167,128 @@ def render_table(df: pd.DataFrame) -> None:
         file_name="valuation_screen.csv",
         mime="text/csv",
     )
+
+
+def _fmt_price(value: float | None, currency: str) -> str:
+    if value is None or pd.isna(value):
+        return "-"
+    return f"{float(value):,.2f} {currency}"
+
+
+def _fmt_number(value: float | None) -> str:
+    if value is None or pd.isna(value):
+        return "-"
+    return f"{float(value):,.0f}"
+
+
+def _fmt_pct(value: float | None) -> str:
+    if value is None or pd.isna(value):
+        return "-"
+    return f"{float(value) * 100.0:.2f}%"
+
+
+def _fmt_pct_direct(value: float | None) -> str:
+    if value is None or pd.isna(value):
+        return "-"
+    return f"{float(value):.2f}%"
+
+
+def render_target_price_result(result: dict | None) -> None:
+    if result is None:
+        st.info("사이드바에서 종목 코드/명을 입력하면 목표가를 계산합니다.")
+        return
+
+    symbol = result.get("symbol") or "-"
+    name = result.get("name") or symbol
+    currency = result.get("currency") or "N/A"
+    float_rate_pct = result.get("float_rate_pct")
+    multiplier = result.get("multiplier")
+    weekly = result.get("weekly_frame")
+    breakout_ts = result.get("breakout_week_end")
+
+    st.subheader("검색종목 목표가 산출")
+    float_rate_label = "-" if float_rate_pct is None or pd.isna(float_rate_pct) else f"{float(float_rate_pct):.1f}%"
+    multiplier_label = "-" if multiplier is None or pd.isna(multiplier) else f"{float(multiplier):.1f}"
+    st.caption(
+        f"{name} ({symbol}) | 유동비율 입력값: {float_rate_label} | 목표가 배수: {multiplier_label}"
+    )
+
+    c1, c2, c3, c4, c5, c6 = st.columns(6)
+    c1.metric("현재가", _fmt_price(result.get("current_price"), currency))
+    c2.metric("52주 이평선", _fmt_price(result.get("ma52_price"), currency))
+    c3.metric("최근 돌파 시점", result.get("breakout_week") or "-")
+    c4.metric("에너지 비율", _fmt_pct(result.get("energy_ratio")))
+    c5.metric("목표가", _fmt_price(result.get("target_price"), currency))
+    c6.metric("상승 여력", _fmt_pct_direct(result.get("upside_pct")))
+
+    cap_text = _fmt_number(result.get("market_cap"))
+    float_cap_text = _fmt_number(result.get("floating_cap"))
+    breakout_val_text = _fmt_number(result.get("breakout_trading_value"))
+    st.caption(
+        "총 시가총액: "
+        f"{cap_text} {currency} | 유통 시가총액: {float_cap_text} {currency} | "
+        f"돌파 주 거래대금: {breakout_val_text} {currency}"
+    )
+
+    if result.get("error"):
+        st.warning(result["error"])
+
+    if not isinstance(weekly, pd.DataFrame) or weekly.empty:
+        return
+
+    chart_df = weekly.tail(180).copy()
+    fig = go.Figure()
+    fig.add_trace(
+        go.Candlestick(
+            x=chart_df.index,
+            open=chart_df["Open"],
+            high=chart_df["High"],
+            low=chart_df["Low"],
+            close=chart_df["Close"],
+            name="Weekly OHLC",
+            increasing_line_color="#0d9488",
+            decreasing_line_color="#dc2626",
+        )
+    )
+    fig.add_trace(
+        go.Scatter(
+            x=chart_df.index,
+            y=chart_df["MA52"],
+            mode="lines",
+            name="MA52",
+            line=dict(color="#2563eb", width=2),
+        )
+    )
+
+    target_price = result.get("target_price")
+    if target_price is not None and not pd.isna(target_price):
+        fig.add_trace(
+            go.Scatter(
+                x=chart_df.index,
+                y=[float(target_price)] * len(chart_df),
+                mode="lines",
+                name="Target Price",
+                line=dict(color="#f59e0b", width=2, dash="dash"),
+            )
+        )
+
+    if breakout_ts is not None and breakout_ts in chart_df.index:
+        fig.add_trace(
+            go.Scatter(
+                x=[breakout_ts],
+                y=[chart_df.loc[breakout_ts, "Close"]],
+                mode="markers",
+                name="최근 돌파 주",
+                marker=dict(color="#7c3aed", size=9, symbol="diamond"),
+            )
+        )
+
+    fig.update_layout(
+        height=620,
+        margin=dict(t=16, b=12, l=12, r=12),
+        xaxis_title="Week",
+        yaxis_title=f"Price ({currency})",
+        xaxis_rangeslider_visible=False,
+        legend=dict(orientation="h", yanchor="bottom", y=1.0, xanchor="left", x=0),
+    )
+    st.plotly_chart(fig, use_container_width=True)

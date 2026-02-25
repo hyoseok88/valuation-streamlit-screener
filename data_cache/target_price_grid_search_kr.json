@@ -1,0 +1,145 @@
+{
+  "country": "KR_TOP200",
+  "created_at_utc": "2026-02-25T18:01:29.735920+00:00",
+  "settings": {
+    "max_symbols": 120,
+    "start": "2014-01-01",
+    "end": "2026-02-25",
+    "validation_start": "2023-01-01",
+    "horizon_weeks": 26,
+    "float_grid": [
+      10.0,
+      100.0,
+      5.0
+    ],
+    "mult_grid": [
+      0.1,
+      5.0,
+      0.1
+    ]
+  },
+  "event_count": 1972,
+  "best": {
+    "float_rate": 80.0,
+    "multiplier": 0.1,
+    "train_events": 1331.0,
+    "valid_events": 641.0,
+    "train_hit_rate": 0.9812171299774606,
+    "valid_hit_rate": 0.9875195007800313,
+    "train_avg_target_upside_pct": 0.14631369824680115,
+    "valid_avg_target_upside_pct": 0.19926544451286524,
+    "valid_balanced_score": 0.1794414177680404
+  },
+  "top10": [
+    {
+      "float_rate": 80.0,
+      "multiplier": 0.1,
+      "train_events": 1331,
+      "valid_events": 641,
+      "train_hit_rate": 0.9812171299774606,
+      "valid_hit_rate": 0.9875195007800313,
+      "train_avg_target_upside_pct": 0.14631369824680115,
+      "valid_avg_target_upside_pct": 0.19926544451286524,
+      "valid_balanced_score": 0.1794414177680404
+    },
+    {
+      "float_rate": 85.0,
+      "multiplier": 0.1,
+      "train_events": 1331,
+      "valid_events": 641,
+      "train_hit_rate": 0.9812171299774606,
+      "valid_hit_rate": 0.9875195007800313,
+      "train_avg_target_upside_pct": 0.13770701011463632,
+      "valid_avg_target_upside_pct": 0.18754394777681432,
+      "valid_balanced_score": 0.16974202602055802
+    },
+    {
+      "float_rate": 90.0,
+      "multiplier": 0.1,
+      "train_events": 1331,
+      "valid_events": 641,
+      "train_hit_rate": 0.9812171299774606,
+      "valid_hit_rate": 0.9875195007800313,
+      "train_avg_target_upside_pct": 0.13005662066382323,
+      "valid_avg_target_upside_pct": 0.1771248395669908,
+      "valid_balanced_score": 0.16103963253641812
+    },
+    {
+      "float_rate": 95.0,
+      "multiplier": 0.1,
+      "train_events": 1331,
+      "valid_events": 641,
+      "train_hit_rate": 0.9819684447783621,
+      "valid_hit_rate": 0.9875195007800313,
+      "train_avg_target_upside_pct": 0.12321153536572733,
+      "valid_avg_target_upside_pct": 0.16780247958978117,
+      "valid_balanced_score": 0.1531877381973423
+    },
+    {
+      "float_rate": 100.0,
+      "multiplier": 0.1,
+      "train_events": 1331,
+      "valid_events": 641,
+      "train_hit_rate": 0.9819684447783621,
+      "valid_hit_rate": 0.9875195007800313,
+      "train_avg_target_upside_pct": 0.11705095859744098,
+      "valid_avg_target_upside_pct": 0.15941235561029235,
+      "valid_balanced_score": 0.1460672551069644
+    },
+    {
+      "float_rate": 70.0,
+      "multiplier": 0.1,
+      "train_events": 1331,
+      "valid_events": 641,
+      "train_hit_rate": 0.980465815176559,
+      "valid_hit_rate": 0.9859594383775351,
+      "train_avg_target_upside_pct": 0.1672156551392013,
+      "valid_avg_target_upside_pct": 0.22773193658613136,
+      "valid_balanced_score": 0.2022878320605705
+    },
+    {
+      "float_rate": 75.0,
+      "multiplier": 0.1,
+      "train_events": 1331,
+      "valid_events": 641,
+      "train_hit_rate": 0.980465815176559,
+      "valid_hit_rate": 0.9859594383775351,
+      "train_avg_target_upside_pct": 0.15606794479658817,
+      "valid_avg_target_upside_pct": 0.21254980748038946,
+      "valid_balanced_score": 0.19001944816589028
+    },
+    {
+      "float_rate": 55.0,
+      "multiplier": 0.1,
+      "train_events": 1331,
+      "valid_events": 641,
+      "train_hit_rate": 0.980465815176559,
+      "valid_hit_rate": 0.984399375975039,
+      "train_avg_target_upside_pct": 0.21281992472261999,
+      "valid_avg_target_upside_pct": 0.28984064656416725,
+      "valid_balanced_score": 0.2505480306991304
+    },
+    {
+      "float_rate": 60.0,
+      "multiplier": 0.1,
+      "train_events": 1331,
+      "valid_events": 641,
+      "train_hit_rate": 0.980465815176559,
+      "valid_hit_rate": 0.984399375975039,
+      "train_avg_target_upside_pct": 0.19508493099573493,
+      "valid_avg_target_upside_pct": 0.2656872593504867,
+      "valid_balanced_score": 0.23193951754852413
+    },
+    {
+      "float_rate": 65.0,
+      "multiplier": 0.1,
+      "train_events": 1331,
+      "valid_events": 641,
+      "train_hit_rate": 0.980465815176559,
+      "valid_hit_rate": 0.984399375975039,
+      "train_avg_target_upside_pct": 0.1800783978422165,
+      "valid_avg_target_upside_pct": 0.24524977786198862,
+      "valid_balanced_score": 0.2159143540122383
+    }
+  ]
+}

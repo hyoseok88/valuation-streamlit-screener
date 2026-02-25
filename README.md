@@ -18,3 +18,13 @@ streamlit run app.py
 ```bash
 python -m src.jobs.daily_refresh
 ```
+
+## Target Price Default Tuning
+
+```bash
+python -m src.jobs.optimize_target_price_defaults --country KR_TOP200
+```
+
+Latest KR tuning artifact:
+- `data_cache/target_price_grid_search_kr.json`
+- `data_cache/target_price_grid_search_kr.csv`
